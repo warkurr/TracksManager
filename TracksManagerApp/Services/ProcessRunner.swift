@@ -52,8 +52,8 @@ struct ProcessRunner: Sendable {
             throw ProcessRunnerError.failedToStart(error.localizedDescription)
         }
 
-        return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
+        let result = await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { continuation in
                 process.terminationHandler = { process in
                     let output = stdout.fileHandleForReading.readDataToEndOfFile()
                     let errorOutput = stderr.fileHandleForReading.readDataToEndOfFile()
@@ -64,10 +64,17 @@ struct ProcessRunner: Sendable {
                     ))
                 }
             }
-        } onCancel: {
+        }, onCancel: {
             if process.isRunning {
                 process.terminate()
             }
+        })
+
+        guard result.exitCode == 0 else {
+            let stderrText = String(data: result.standardError, encoding: .utf8) ?? ""
+            throw ProcessRunnerError.nonZeroExit(code: result.exitCode, stderr: stderrText.trimmingCharacters(in: .whitespacesAndNewlines))
         }
+
+        return result
     }
 }
