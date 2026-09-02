@@ -22,6 +22,16 @@ struct TrackChangeSet: Codable, Hashable, Sendable {
             isSDH: before.isSDH == after.isSDH ? nil : after.isSDH
         )
     }
+
+    var changedFields: [String] {
+        var fields: [String] = []
+        if before.language != after.language { fields.append("Langue") }
+        if before.title != after.title { fields.append("Titre") }
+        if before.isDefault != after.isDefault { fields.append("Par défaut") }
+        if before.isForced != after.isForced { fields.append("Forcé") }
+        if before.isSDH != after.isSDH { fields.append("SDH/HI") }
+        return fields
+    }
 }
 
 enum MKVTrackSelectorCodable: Codable, Hashable, Sendable {
@@ -39,6 +49,13 @@ enum MKVTrackSelectorCodable: Codable, Hashable, Sendable {
         switch self {
         case .trackNumber(let number): .trackNumber(number)
         case .uid(let uid): .uid(uid)
+        }
+    }
+
+    var displayValue: String {
+        switch self {
+        case .trackNumber(let number): "Track \(number)"
+        case .uid(let uid): "UID \(uid)"
         }
     }
 }
