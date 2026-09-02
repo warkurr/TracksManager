@@ -1,0 +1,33 @@
+name: Build
+
+on:
+  push:
+    branches: [main, feature/v1-foundation]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify native target
+        run: |
+          xcodebuild -project TracksManagerApp.xcodeproj \
+            -scheme TracksManager \
+            -configuration Debug \
+            -sdk macosx \
+            -showBuildSettings > /tmp/tracksmanager-build-settings.txt
+          grep -q 'PRODUCT_BUNDLE_IDENTIFIER = com.warkurr.TracksManager' /tmp/tracksmanager-build-settings.txt
+          grep -q 'MACOSX_DEPLOYMENT_TARGET = 15.0' /tmp/tracksmanager-build-settings.txt
+
+      - name: Build macOS app
+        run: |
+          xcodebuild -project TracksManagerApp.xcodeproj \
+            -scheme TracksManager \
+            -configuration Debug \
+            -sdk macosx \
+            -arch arm64 \
+            CODE_SIGNING_ALLOWED=NO \
+            build
