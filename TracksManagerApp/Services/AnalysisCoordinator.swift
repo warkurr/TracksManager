@@ -8,12 +8,20 @@ final class AnalysisCoordinator {
     private(set) var errors: [UUID: String] = [:]
 
     private let locator: ToolLocator
+    private let cache: AnalysisCache
 
-    init(locator: ToolLocator = ToolLocator()) {
+    init(locator: ToolLocator = ToolLocator(), cache: AnalysisCache = AnalysisCache()) {
         self.locator = locator
+        self.cache = cache
     }
 
-    func analyze(_ file: MediaFile) async {
+    func analyze(_ file: MediaFile, force: Bool = false) async {
+        if !force, let cached = await cache.cachedAnalysis(for: file.url) {
+            analyses[file.id] = cached
+            errors.removeValue(forKey: file.id)
+            return
+        }
+
         guard let executable = locator.executable(named: "ffprobe") else {
             errors[file.id] = "Le moteur d'analyse intégré n'est pas encore installé dans cette version."
             return
@@ -21,8 +29,10 @@ final class AnalysisCoordinator {
 
         do {
             let analyzer = FFProbeAnalyzer(executableURL: executable)
-            analyses[file.id] = try await analyzer.analyze(fileURL: file.url)
+            let analysis = try await analyzer.analyze(fileURL: file.url)
+            analyses[file.id] = analysis
             errors.removeValue(forKey: file.id)
+            await cache.store(analysis)
         } catch {
             errors[file.id] = error.localizedDescription
         }
