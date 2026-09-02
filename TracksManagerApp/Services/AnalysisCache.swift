@@ -20,9 +20,7 @@ actor AnalysisCache {
     }
 
     func cachedAnalysis(for fileURL: URL) -> MediaAnalysis? {
-        guard let fingerprint = fingerprint(for: fileURL) else {
-            return nil
-        }
+        guard let fingerprint = fingerprint(for: fileURL) else { return nil }
 
         if let cached = memory[fileURL], isValid(cached, fingerprint: fingerprint) {
             return cached.analysis
@@ -39,9 +37,7 @@ actor AnalysisCache {
     }
 
     func store(_ analysis: MediaAnalysis) {
-        guard let fingerprint = fingerprint(for: analysis.fileURL) else {
-            return
-        }
+        guard let fingerprint = fingerprint(for: analysis.fileURL) else { return }
 
         let cached = CachedMediaAnalysis(
             fileSize: fingerprint.size,
