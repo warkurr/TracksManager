@@ -21,10 +21,10 @@ struct ProcessingPlanBuilder: Sendable {
                 ProcessingOperation(
                     kind: .validate,
                     title: "Valider le MKV",
-                    detail: "Ré-analyser le conteneur et vérifier les pistes après traitement."
+                    detail: "Ré-analyser le conteneur et vérifier que sa structure reste lisible après traitement."
                 )
             ],
-            requiresBackup: true
+            requiresBackup: false
         )
     }
 }
