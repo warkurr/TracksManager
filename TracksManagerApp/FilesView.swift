@@ -61,9 +61,10 @@ struct FilesView: View {
     private func add(urls: [URL]) {
         let newFiles = urls
             .filter { $0.pathExtension.lowercased() == "mkv" }
-            .map(MediaFile.init(url:))
+            .map { MediaFile(url: $0) }
+
         files.append(contentsOf: newFiles.filter { candidate in
-            !files.contains(where: { $0.url == candidate.url })
+            !files.contains(where: { $0.url.standardizedFileURL == candidate.url.standardizedFileURL })
         })
     }
 
