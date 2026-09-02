@@ -7,6 +7,10 @@ struct MKVIdentification: Codable, Sendable, Hashable {
     let errors: [String]
 
     var isSupported: Bool { errors.isEmpty }
+
+    func tracks(ofType type: String) -> [MKVIdentifiedTrack] {
+        tracks.filter { $0.type.caseInsensitiveCompare(type) == .orderedSame }
+    }
 }
 
 struct MKVIdentifiedTrack: Codable, Sendable, Hashable, Identifiable {
@@ -16,12 +20,22 @@ struct MKVIdentifiedTrack: Codable, Sendable, Hashable, Identifiable {
     let properties: [String: JSONValue]
 
     var trackNumber: Int? { properties["number"]?.intValue }
-    var uid: Int64? { properties["uid"]?.intValue.map(Int64.init) }
-    var language: String? { properties["language"]?.stringValue }
+    var uid: Int64? { properties["uid"]?.int64Value }
+    var language: String? { properties["language_ietf"]?.stringValue ?? properties["language"]?.stringValue }
     var title: String? { properties["track_name"]?.stringValue }
     var isDefault: Bool { properties["default_track"]?.boolValue ?? false }
     var isForced: Bool { properties["forced_track"]?.boolValue ?? false }
     var isSDH: Bool { properties["flag_hearing_impaired"]?.boolValue ?? false }
+    var isVisualDescriptions: Bool { properties["flag_visual_impaired"]?.boolValue ?? false }
+    var isTextDescriptions: Bool { properties["flag_text_descriptions"]?.boolValue ?? false }
+    var codecID: String? { properties["codec_id"]?.stringValue }
+    var packetizer: String? { properties["packetizer"]?.stringValue }
+
+    /// The stable selector preferred by mkvpropedit when a UID is available.
+    var selector: MKVTrackSelector {
+        if let uid { return .uid(uid) }
+        return .trackNumber(trackNumber ?? id + 1)
+    }
 }
 
 enum JSONValue: Codable, Sendable, Hashable {
@@ -69,6 +83,14 @@ enum JSONValue: Codable, Sendable, Hashable {
         switch self {
         case .number(let value): return Int(value)
         case .string(let value): return Int(value)
+        default: return nil
+        }
+    }
+
+    var int64Value: Int64? {
+        switch self {
+        case .number(let value): return Int64(value)
+        case .string(let value): return Int64(value)
         default: return nil
         }
     }
