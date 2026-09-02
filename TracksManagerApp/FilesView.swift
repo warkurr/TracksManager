@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct FilesView: View {
     @State private var files: [MediaFile] = []
+    @State private var selectedFileID: UUID?
     @State private var isDropTargeted = false
     @State private var showingImporter = false
     @State private var analysisCoordinator = AnalysisCoordinator()
@@ -32,7 +33,7 @@ struct FilesView: View {
                 ContentUnavailableView {
                     Label("Aucun fichier", systemImage: "film.stack")
                 } description: {
-                    Text("Glissez-déposez des fichiers MKV ici pour commencer l'analyse.")
+                    Text("Glissez-déposez des fichiers MKV ou des dossiers ici pour commencer.")
                 } actions: {
                     Button("Choisir des fichiers") {
                         showingImporter = true
@@ -41,21 +42,41 @@ struct FilesView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(isDropTargeted ? Color.accentColor.opacity(0.08) : .clear)
             } else {
-                List(files) { file in
-                    FileRow(
-                        file: file,
-                        analysis: analysisCoordinator.analysis(for: file),
-                        error: analysisCoordinator.error(for: file),
-                        onAnalyze: { analyze(file) }
+                HSplitView {
+                    List(selection: $selectedFileID) {
+                        ForEach(files) { file in
+                            FileRow(
+                                file: file,
+                                analysis: analysisCoordinator.analysis(for: file),
+                                error: analysisCoordinator.error(for: file),
+                                isCached: analysisCoordinator.cachedResults.contains(file.id),
+                                onAnalyze: { analyze(file, forceRefresh: true) }
+                            )
+                            .tag(file.id)
+                        }
+                    }
+                    .listStyle(.inset)
+                    .frame(minWidth: 360, idealWidth: 430)
+
+                    FileDetailView(
+                        file: files.first(where: { $0.id == selectedFileID }),
+                        analysis: selectedFile.flatMap { analysisCoordinator.analysis(for: $0) },
+                        error: selectedFile.flatMap { analysisCoordinator.error(for: $0) },
+                        onAnalyze: {
+                            if let selectedFile { analyze(selectedFile, forceRefresh: true) }
+                        }
                     )
+                    .frame(minWidth: 480)
                 }
-                .listStyle(.inset)
+            }
+        }
+        .onChange(of: files) { _, newFiles in
+            if selectedFileID == nil {
+                selectedFileID = newFiles.first?.id
             }
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
-            Task {
-                await importDroppedFiles(from: providers)
-            }
+            Task { await importDroppedFiles(from: providers) }
             return true
         }
         .fileImporter(
@@ -68,31 +89,52 @@ struct FilesView: View {
         }
     }
 
-    private func add(urls: [URL]) {
-        let newFiles = urls
-            .filter { $0.pathExtension.lowercased() == "mkv" }
-            .map { MediaFile(url: $0) }
-
-        let uniqueFiles = newFiles.filter { candidate in
-            !files.contains(where: { $0.url.standardizedFileURL == candidate.url.standardizedFileURL })
-        }
-        files.append(contentsOf: uniqueFiles)
-
-        for file in uniqueFiles {
-            analyze(file)
-        }
+    private var selectedFile: MediaFile? {
+        guard let selectedFileID else { return nil }
+        return files.first(where: { $0.id == selectedFileID })
     }
 
-    private func analyze(_ file: MediaFile) {
-        Task {
-            await analysisCoordinator.analyze(file)
+    private func add(urls: [URL]) {
+        let candidates = urls.flatMap { collectMKVs(from: $0) }
+        let existing = Set(files.map { $0.url.standardizedFileURL })
+        let newFiles = candidates
+            .filter { !existing.contains($0.standardizedFileURL) }
+            .map { MediaFile(url: $0) }
+
+        files.append(contentsOf: newFiles)
+        if selectedFileID == nil { selectedFileID = newFiles.first?.id }
+
+        for file in newFiles { analyze(file) }
+    }
+
+    private func collectMKVs(from url: URL) -> [URL] {
+        if url.pathExtension.caseInsensitiveCompare("mkv") == .orderedSame {
+            return [url]
         }
+
+        var results: [URL] = []
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey]
+        guard let enumerator = FileManager.default.enumerator(
+            at: url,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        for case let child as URL in enumerator {
+            guard child.pathExtension.caseInsensitiveCompare("mkv") == .orderedSame else { continue }
+            if let values = try? child.resourceValues(forKeys: keys), values.isRegularFile == true {
+                results.append(child)
+            }
+        }
+        return results
+    }
+
+    private func analyze(_ file: MediaFile, forceRefresh: Bool = false) {
+        Task { await analysisCoordinator.analyze(file, forceRefresh: forceRefresh) }
     }
 
     private func analyzeAll() {
-        for file in files {
-            analyze(file)
-        }
+        for file in files { analyze(file) }
     }
 
     private func importDroppedFiles(from providers: [NSItemProvider]) async {
@@ -103,7 +145,7 @@ struct FilesView: View {
                       let url = URL(dataRepresentation: data, relativeTo: nil) else { continue }
                 await MainActor.run { add(urls: [url]) }
             } catch {
-                // Import errors will be surfaced by the processing/logging layer.
+                // Individual import errors do not abort the rest of the drop.
             }
         }
     }
@@ -113,6 +155,7 @@ private struct FileRow: View {
     let file: MediaFile
     let analysis: MediaAnalysis?
     let error: String?
+    let isCached: Bool
     let onAnalyze: () -> Void
 
     var body: some View {
@@ -145,7 +188,7 @@ private struct FileRow: View {
             Spacer()
 
             if analysis != nil {
-                Label("Analysé", systemImage: "checkmark.circle.fill")
+                Label(isCached ? "Cache" : "Analysé", systemImage: isCached ? "internaldrive" : "checkmark.circle.fill")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -163,6 +206,224 @@ private struct FileRow: View {
         let subtitles = "\(analysis.subtitleTracks.count) sous-titre\(analysis.subtitleTracks.count == 1 ? "" : "s")"
         return [video, audio, subtitles].joined(separator: " • ")
     }
+}
+
+private struct FileDetailView: View {
+    let file: MediaFile?
+    let analysis: MediaAnalysis?
+    let error: String?
+    let onAnalyze: () -> Void
+
+    var body: some View {
+        Group {
+            if let file {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        header(file)
+
+                        if let analysis {
+                            OverviewSection(analysis: analysis)
+                            TrackSection(title: "Vidéo", systemImage: "rectangle.on.rectangle", content: {
+                                ForEach(analysis.videoTracks) { track in
+                                    VideoTrackRow(track: track)
+                                }
+                            })
+                            TrackSection(title: "Audio", systemImage: "waveform", content: {
+                                ForEach(analysis.audioTracks) { track in
+                                    AudioTrackRow(track: track)
+                                }
+                            })
+                            TrackSection(title: "Sous-titres", systemImage: "captions.bubble", content: {
+                                ForEach(analysis.subtitleTracks) { track in
+                                    SubtitleTrackRow(track: track)
+                                }
+                            })
+                        } else if let error {
+                            ContentUnavailableView {
+                                Label("Analyse impossible", systemImage: "exclamationmark.triangle")
+                            } description: {
+                                Text(error)
+                            } actions: {
+                                Button("Réessayer", action: onAnalyze)
+                            }
+                        } else {
+                            ProgressView("Analyse en cours…")
+                                .frame(maxWidth: .infinity, minHeight: 260)
+                        }
+                    }
+                    .padding(24)
+                }
+            } else {
+                ContentUnavailableView("Sélectionnez un fichier", systemImage: "sidebar.left")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func header(_ file: MediaFile) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(file.name)
+                .font(.title2.bold())
+                .textSelection(.enabled)
+            Text(file.url.path)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        }
+    }
+}
+
+private struct OverviewSection: View {
+    let analysis: MediaAnalysis
+
+    var body: some View {
+        GroupBox("Résumé") {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), alignment: .leading)], alignment: .leading, spacing: 14) {
+                Metric(title: "Durée", value: formattedDuration(analysis.duration))
+                Metric(title: "Taille", value: formattedBytes(analysis.size))
+                Metric(title: "Conteneur", value: analysis.format?.uppercased() ?? "Inconnu")
+                Metric(title: "Vidéo", value: "\(analysis.videoTracks.count)")
+                Metric(title: "Audio", value: "\(analysis.audioTracks.count)")
+                Metric(title: "Sous-titres", value: "\(analysis.subtitleTracks.count)")
+            }
+            .padding(6)
+        }
+    }
+}
+
+private struct Metric: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.headline)
+        }
+    }
+}
+
+private struct TrackSection<Content: View>: View {
+    let title: String
+    let systemImage: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Label(title, systemImage: systemImage)
+                        .font(.headline)
+                    Spacer()
+                }
+                Divider().padding(.vertical, 8)
+                content
+            }
+            .padding(6)
+        }
+    }
+}
+
+private struct VideoTrackRow: View {
+    let track: VideoTrack
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Piste \(track.id + 1)")
+                    .font(.body.weight(.medium))
+                Text([track.displayCodec, track.displayResolution, track.displayFrameRate].joined(separator: " • "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if track.hdr {
+                Text("HDR")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(.secondary.opacity(0.12), in: Capsule())
+            }
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+private struct AudioTrackRow: View {
+    let track: AudioTrack
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(track.displayTitle)
+                    .font(.body.weight(.medium))
+                Text([track.displayLanguage, track.codec?.uppercased() ?? "Codec inconnu", track.displayChannels].joined(separator: " • "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            TrackBadges(isDefault: track.isDefault, isForced: track.isForced, isSDH: false)
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+private struct SubtitleTrackRow: View {
+    let track: SubtitleTrack
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(track.displayTitle)
+                    .font(.body.weight(.medium))
+                Text([track.displayLanguage, track.displayFormat].joined(separator: " • "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            TrackBadges(isDefault: track.isDefault, isForced: track.isForced, isSDH: track.isSDH)
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+private struct TrackBadges: View {
+    let isDefault: Bool
+    let isForced: Bool
+    let isSDH: Bool
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if isDefault { Badge("Default") }
+            if isForced { Badge("Forced") }
+            if isSDH { Badge("SDH") }
+        }
+    }
+
+    private func Badge(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(.secondary.opacity(0.12), in: Capsule())
+    }
+}
+
+private func formattedDuration(_ duration: TimeInterval?) -> String {
+    guard let duration else { return "Inconnue" }
+    let totalSeconds = max(0, Int(duration.rounded()))
+    let hours = totalSeconds / 3600
+    let minutes = (totalSeconds % 3600) / 60
+    let seconds = totalSeconds % 60
+    return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, seconds) : String(format: "%d:%02d", minutes, seconds)
+}
+
+private func formattedBytes(_ size: Int64?) -> String {
+    guard let size else { return "Inconnue" }
+    return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
 }
 
 private extension UTType {
