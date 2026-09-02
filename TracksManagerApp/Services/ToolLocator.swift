@@ -1,8 +1,6 @@
 import Foundation
 
 struct ToolLocator: Sendable {
-    private let fileManager = FileManager.default
-
     func executable(named name: String) -> URL? {
         let candidates = [
             Bundle.main.url(forResource: name, withExtension: nil, subdirectory: "Tools"),
@@ -11,7 +9,7 @@ struct ToolLocator: Sendable {
         ]
 
         return candidates.compactMap { $0 }.first {
-            fileManager.isExecutableFile(atPath: $0.path)
+            FileManager.default.isExecutableFile(atPath: $0.path)
         }
     }
 }
