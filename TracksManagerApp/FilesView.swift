@@ -5,6 +5,7 @@ struct FilesView: View {
     @State private var files: [MediaFile] = []
     @State private var isDropTargeted = false
     @State private var showingImporter = false
+    @State private var analysisCoordinator = AnalysisCoordinator()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -16,6 +17,10 @@ struct FilesView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button("Analyser tout", systemImage: "waveform.path.ecg") {
+                    analyzeAll()
+                }
+                .disabled(files.isEmpty)
                 Button("Ajouter", systemImage: "plus") {
                     showingImporter = true
                 }
@@ -37,7 +42,12 @@ struct FilesView: View {
                 .background(isDropTargeted ? Color.accentColor.opacity(0.08) : .clear)
             } else {
                 List(files) { file in
-                    FileRow(file: file)
+                    FileRow(
+                        file: file,
+                        analysis: analysisCoordinator.analysis(for: file),
+                        error: analysisCoordinator.error(for: file),
+                        onAnalyze: { analyze(file) }
+                    )
                 }
                 .listStyle(.inset)
             }
@@ -63,9 +73,26 @@ struct FilesView: View {
             .filter { $0.pathExtension.lowercased() == "mkv" }
             .map { MediaFile(url: $0) }
 
-        files.append(contentsOf: newFiles.filter { candidate in
+        let uniqueFiles = newFiles.filter { candidate in
             !files.contains(where: { $0.url.standardizedFileURL == candidate.url.standardizedFileURL })
-        })
+        }
+        files.append(contentsOf: uniqueFiles)
+
+        for file in uniqueFiles {
+            analyze(file)
+        }
+    }
+
+    private func analyze(_ file: MediaFile) {
+        Task {
+            await analysisCoordinator.analyze(file)
+        }
+    }
+
+    private func analyzeAll() {
+        for file in files {
+            analyze(file)
+        }
     }
 
     private func importDroppedFiles(from providers: [NSItemProvider]) async {
@@ -84,26 +111,57 @@ struct FilesView: View {
 
 private struct FileRow: View {
     let file: MediaFile
+    let analysis: MediaAnalysis?
+    let error: String?
+    let onAnalyze: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "film")
                 .font(.title3)
                 .foregroundStyle(.secondary)
-            VStack(alignment: .leading) {
+
+            VStack(alignment: .leading, spacing: 4) {
                 Text(file.name)
                     .lineLimit(1)
-                Text(file.url.path)
+
+                if let analysis {
+                    Text(summary(for: analysis))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else if let error {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+                } else {
+                    Text("Analyse en cours…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            if analysis != nil {
+                Label("Analysé", systemImage: "checkmark.circle.fill")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            } else {
+                Button("Analyser", systemImage: "arrow.clockwise", action: onAnalyze)
+                    .labelStyle(.iconOnly)
+                    .help("Analyser ce fichier")
             }
-            Spacer()
-            Text("À analyser")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
+    }
+
+    private func summary(for analysis: MediaAnalysis) -> String {
+        let video = "\(analysis.videoTracks.count) vidéo"
+        let audio = "\(analysis.audioTracks.count) audio"
+        let subtitles = "\(analysis.subtitleTracks.count) sous-titre\(analysis.subtitleTracks.count == 1 ? "" : "s")"
+        return [video, audio, subtitles].joined(separator: " • ")
     }
 }
 
