@@ -14,14 +14,14 @@ struct MediaFile: Identifiable, Hashable {
     var name: String { url.lastPathComponent }
 }
 
-enum AnalysisStatus: String, Hashable {
+enum AnalysisStatus: String, Hashable, Codable {
     case notAnalyzed
     case analyzing
     case analyzed
     case failed
 }
 
-struct VideoTrack: Identifiable, Hashable {
+struct VideoTrack: Identifiable, Hashable, Codable {
     let id: Int
     var codec: String?
     var resolution: String?
@@ -30,7 +30,7 @@ struct VideoTrack: Identifiable, Hashable {
     var hdr: Bool
 }
 
-struct AudioTrack: Identifiable, Hashable {
+struct AudioTrack: Identifiable, Hashable, Codable {
     let id: Int
     var codec: String?
     var language: String?
@@ -43,7 +43,7 @@ struct AudioTrack: Identifiable, Hashable {
     var order: Int
 }
 
-struct SubtitleTrack: Identifiable, Hashable {
+struct SubtitleTrack: Identifiable, Hashable, Codable {
     let id: Int
     var format: String
     var language: String?
@@ -55,7 +55,7 @@ struct SubtitleTrack: Identifiable, Hashable {
     var source: SubtitleSource
 }
 
-enum SubtitleSource: String, Hashable {
+enum SubtitleSource: String, Hashable, Codable {
     case embedded
     case external
     case downloaded
