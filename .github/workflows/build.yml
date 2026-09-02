@@ -1,0 +1,15 @@
+name: Build
+
+on:
+  push:
+    branches: [main, feature/v1-foundation]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build macOS app
+        run: xcodebuild -project TracksManagerApp.xcodeproj -scheme TracksManager -configuration Debug -sdk macosx CODE_SIGNING_ALLOWED=NO build
