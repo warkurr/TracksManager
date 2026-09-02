@@ -8,12 +8,9 @@ actor JobScheduler {
 
         var limit: Int {
             switch self {
-            case .automatic:
-                max(1, ProcessInfo.processInfo.activeProcessorCount - 1)
-            case .manual(let value):
-                min(max(1, value), 20)
-            case .economy:
-                1
+            case .automatic: max(1, ProcessInfo.processInfo.activeProcessorCount - 1)
+            case .manual(let value): min(max(1, value), 20)
+            case .economy: 1
             }
         }
     }
@@ -38,22 +35,32 @@ actor JobScheduler {
     }
 
     func cancel(jobID: UUID) {
-        guard var job = jobs[jobID] else { return }
-        guard job.state == .waiting else { return }
+        guard var job = jobs[jobID], job.state == .waiting else { return }
         job.state = .cancelled
         jobs[jobID] = job
         pending.removeAll { $0 == jobID }
     }
 
     func cancelAllWaiting() {
-        for id in pending { cancel(jobID: id) }
+        let ids = pending
+        for id in ids { cancel(jobID: id) }
     }
 
     func snapshot() -> [ProcessingJob] {
-        jobs.values.sorted { lhs, rhs in
-            if lhs.state == rhs.state { return lhs.fileURL.lastPathComponent < rhs.fileURL.lastPathComponent }
-            return lhs.state.rawValue < rhs.state.rawValue
+        jobs.values.sorted {
+            if $0.state == $1.state { return $0.fileURL.lastPathComponent.localizedStandardCompare($1.fileURL.lastPathComponent) == .orderedAscending }
+            return $0.state.rawValue < $1.state.rawValue
         }
+    }
+
+    func clearFinished() {
+        let removable = jobs.values.filter {
+            switch $0.state {
+            case .completed, .failed, .skipped, .cancelled, .warning: true
+            default: false
+            }
+        }.map(\.id)
+        for id in removable { jobs.removeValue(forKey: id) }
     }
 
     private func pump() {
@@ -69,7 +76,7 @@ actor JobScheduler {
     }
 
     private func finishPlanning(jobID: UUID) async {
-        guard var job = jobs[jobID] else { return }
+        guard var job = jobs[jobID] else { running -= 1; pump(); return }
         let builder = ProcessingPlanBuilder()
         job.plan = builder.makeValidationPlan(for: MediaFile(url: job.fileURL))
         job.progress = 0.1
