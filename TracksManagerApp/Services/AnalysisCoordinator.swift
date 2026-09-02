@@ -6,6 +6,7 @@ import Observation
 final class AnalysisCoordinator {
     private(set) var analyses: [UUID: MediaAnalysis] = [:]
     private(set) var errors: [UUID: String] = [:]
+    private(set) var cachedResults: Set<UUID> = []
 
     private let locator: ToolLocator
     private let cache: AnalysisCache
@@ -15,9 +16,10 @@ final class AnalysisCoordinator {
         self.cache = cache
     }
 
-    func analyze(_ file: MediaFile, force: Bool = false) async {
-        if !force, let cached = await cache.cachedAnalysis(for: file.url) {
+    func analyze(_ file: MediaFile, forceRefresh: Bool = false) async {
+        if !forceRefresh, let cached = await cache.cachedAnalysis(for: file.url) {
             analyses[file.id] = cached
+            cachedResults.insert(file.id)
             errors.removeValue(forKey: file.id)
             return
         }
@@ -31,11 +33,18 @@ final class AnalysisCoordinator {
             let analyzer = FFProbeAnalyzer(executableURL: executable)
             let analysis = try await analyzer.analyze(fileURL: file.url)
             analyses[file.id] = analysis
+            cachedResults.remove(file.id)
             errors.removeValue(forKey: file.id)
             await cache.store(analysis)
         } catch {
             errors[file.id] = error.localizedDescription
         }
+    }
+
+    func invalidateCache(for file: MediaFile) async {
+        await cache.invalidate(fileURL: file.url)
+        cachedResults.remove(file.id)
+        analyses.removeValue(forKey: file.id)
     }
 
     func analysis(for file: MediaFile) -> MediaAnalysis? {
