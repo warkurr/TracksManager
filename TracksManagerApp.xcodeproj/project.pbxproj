@@ -15,6 +15,7 @@
 		A10000010000000000000006 /* ProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000010000000000000006 /* ProcessRunner.swift */; };
 		A10000010000000000000007 /* ToolLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000010000000000000007 /* ToolLocator.swift */; };
 		A10000010000000000000008 /* MediaAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000010000000000000008 /* MediaAnalyzer.swift */; };
+		A10000010000000000000009 /* FFProbeAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000010000000000000009 /* FFProbeAnalyzer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +27,7 @@
 		B10000010000000000000006 /* ProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessRunner.swift; sourceTree = "<group>"; };
 		B10000010000000000000007 /* ToolLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolLocator.swift; sourceTree = "<group>"; };
 		B10000010000000000000008 /* MediaAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaAnalyzer.swift; sourceTree = "<group>"; };
+		B10000010000000000000009 /* FFProbeAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FFProbeAnalyzer.swift; sourceTree = "<group>"; };
 		B10000010000000000000010 /* TracksManager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TracksManager.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -67,6 +69,7 @@
 				B10000010000000000000006 /* ProcessRunner.swift */,
 				B10000010000000000000007 /* ToolLocator.swift */,
 				B10000010000000000000008 /* MediaAnalyzer.swift */,
+				B10000010000000000000009 /* FFProbeAnalyzer.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -154,6 +157,7 @@
 				A10000010000000000000006 /* ProcessRunner.swift in Sources */,
 				A10000010000000000000007 /* ToolLocator.swift in Sources */,
 				A10000010000000000000008 /* MediaAnalyzer.swift in Sources */,
+				A10000010000000000000009 /* FFProbeAnalyzer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
