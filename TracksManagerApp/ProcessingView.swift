@@ -1,9 +1,9 @@
 import SwiftUI
 
 struct ProcessingView: View {
+    @Environment(AppModel.self) private var model
     @State private var jobs: [ProcessingJob] = []
     @State private var mode: JobScheduler.ConcurrencyMode = .automatic
-    @State private var scheduler = JobScheduler()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -17,11 +17,16 @@ struct ProcessingView: View {
                 Picker("Concurrence", selection: $mode) {
                     Text("Auto").tag(JobScheduler.ConcurrencyMode.automatic)
                     Text("Économie").tag(JobScheduler.ConcurrencyMode.economy)
-                    ForEach(1...20, id: \.self) { value in Text("\(value)").tag(JobScheduler.ConcurrencyMode.manual(value)) }
+                    ForEach(1...20, id: \.self) { value in
+                        Text("\(value)").tag(JobScheduler.ConcurrencyMode.manual(value))
+                    }
                 }
                 .pickerStyle(.menu)
+                Button("Annuler en attente") {
+                    Task { await model.scheduler.cancelAllWaiting(); await refresh() }
+                }
                 Button("Effacer terminés") {
-                    Task { await scheduler.clearFinished(); await refresh() }
+                    Task { await model.scheduler.clearFinished(); await refresh() }
                 }
             }
 
@@ -29,12 +34,14 @@ struct ProcessingView: View {
                 ContentUnavailableView {
                     Label("Aucun traitement en cours", systemImage: "gearshape.2")
                 } description: {
-                    Text("Les traitements par lot apparaîtront ici avec leur progression et leur étape exacte.")
+                    Text("Ajoutez des fichiers à la file depuis la vue Fichiers. Les traitements actifs et leur progression apparaîtront ici.")
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(jobs) { job in
-                    JobRow(job: job)
+                    JobRow(job: job, onCancel: {
+                        Task { await model.scheduler.cancel(jobID: job.id); await refresh() }
+                    })
                 }
                 .listStyle(.inset)
             }
@@ -42,11 +49,11 @@ struct ProcessingView: View {
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task {
-            await scheduler.setConcurrencyMode(mode)
+            await model.scheduler.setConcurrencyMode(mode)
             await refresh()
         }
         .onChange(of: mode) { _, newMode in
-            Task { await scheduler.setConcurrencyMode(newMode); await refresh() }
+            Task { await model.scheduler.setConcurrencyMode(newMode); await refresh() }
         }
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
             Task { await refresh() }
@@ -54,12 +61,13 @@ struct ProcessingView: View {
     }
 
     private func refresh() async {
-        jobs = await scheduler.snapshot()
+        jobs = await model.scheduler.snapshot()
     }
 }
 
 private struct JobRow: View {
     let job: ProcessingJob
+    let onCancel: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -83,7 +91,15 @@ private struct JobRow: View {
                 }
             }
             Spacer()
-            Text("\(Int(job.progress * 100)) %").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            if job.state == .waiting || job.state == .planning || job.state == .processing {
+                Button("Annuler", systemImage: "xmark") { onCancel() }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .help("Annuler cette tâche")
+            }
+            Text("\(Int(job.progress * 100)) %")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 5)
     }
