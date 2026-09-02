@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare vendor directories
+        run: |
+          rm -rf Vendor
+          mkdir -p Vendor/Tools Vendor/Frameworks ThirdParty/Source
+
+      - name: Download MKVToolNix arm64
+        env:
+          MKV_VERSION: "101.0"
+          MKV_BUILD: "1"
+        run: |
+          curl -fsSL -o /tmp/mkvtoolnix.dmg "https://mkvtoolnix.download/macos/releases/${MKV_VERSION}/MKVToolNix-${MKV_VERSION}-${MKV_BUILD}-arm64.dmg"
+          curl -fsSL -o "ThirdParty/Source/mkvtoolnix-${MKV_VERSION}.tar.xz" "https://mkvtoolnix.download/sources/mkvtoolnix-${MKV_VERSION}.tar.xz"
+          hdiutil attach /tmp/mkvtoolnix.dmg -nobrowse -readonly -mountpoint /tmp/mkvtoolnix
+          APP=/tmp/mkvtoolnix/MKVToolNix.app
+          for tool in mkvmerge mkvpropedit mkvextract mkvinfo; do
+            cp "$APP/Contents/MacOS/$tool" "Vendor/Tools/$tool"
+          done
+          if [ -d "$APP/Contents/Frameworks" ]; then
+            cp -R "$APP/Contents/Frameworks/". Vendor/Frameworks/
+          fi
+          hdiutil detach /tmp/mkvtoolnix
+
+      - name: Build FFmpeg 9.0.1 for arm64
+        run: |
+          curl -fsSL -o /tmp/ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz"
+          cp /tmp/ffmpeg.tar.xz ThirdParty/Source/
+          tar -xJf /tmp/ffmpeg.tar.xz -C /tmp
+          cd /tmp/ffmpeg-9.0.1
+          ./configure \
+            --prefix="$GITHUB_WORKSPACE/Vendor/ffmpeg" \
+            --arch=arm64 \
+            --target-os=darwin \
+            --cc=clang \
+            --disable-debug \
+            --disable-doc \
+            --disable-network \
+            --enable-static \
+            --disable-shared
+          make -j"$(sysctl -n hw.ncpu)"
+          make install
+          cp "$GITHUB_WORKSPACE/Vendor/ffmpeg/bin/ffmpeg" "$GITHUB_WORKSPACE/Vendor/Tools/ffmpeg"
+          cp "$GITHUB_WORKSPACE/Vendor/ffmpeg/bin/ffprobe" "$GITHUB_WORKSPACE/Vendor/Tools/ffprobe"
+          rm -rf "$GITHUB_WORKSPACE/Vendor/ffmpeg"
+
+      - name: Copy dependency licenses
+        run: |
+          mkdir -p Vendor/Licenses
+          printf '%s\n' 'MKVToolNix source: ThirdParty/Source/mkvtoolnix-101.0.tar.xz' > Vendor/Licenses/README.txt
+          printf '%s\n' 'FFmpeg source: ThirdParty/Source/ffmpeg-9.0.1.tar.xz' >> Vendor/Licenses/README.txt
+          cp /tmp/ffmpeg-9.0.1/LICENSE Vendor/Licenses/FFmpeg-LICENSE.txt
+
+      - name: Build unsigned arm64 app
+        run: |
+          xcodebuild -project TracksManagerApp.xcodeproj \
+            -scheme TracksManager \
+            -configuration Release \
+            -sdk macosx \
+            -arch arm64 \
+            CODE_SIGNING_ALLOWED=NO \
+            archive \
+            -archivePath "$RUNNER_TEMP/TracksManager.xcarchive"
+
+      - name: Package app
+        run: |
+          mkdir -p dist
+          cp -R "$RUNNER_TEMP/TracksManager.xcarchive/Products/Applications/TracksManager.app" dist/
+          ditto -c -k --sequesterRsrc --keepParent dist/TracksManager.app "dist/TracksManager-${GITHUB_REF_NAME}-arm64.zip"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/TracksManager-${GITHUB_REF_NAME}-arm64.zip" \
+            ThirdParty/Source/mkvtoolnix-101.0.tar.xz \
+            ThirdParty/Source/ffmpeg-9.0.1.tar.xz \
+            --title "TracksManager $GITHUB_REF_NAME" \
+            --generate-notes
