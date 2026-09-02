@@ -61,3 +61,31 @@ enum SubtitleSource: String, Hashable {
     case downloaded
     case generated
 }
+
+extension VideoTrack {
+    var displayCodec: String { codec?.uppercased() ?? "Inconnu" }
+    var displayResolution: String { resolution ?? "Résolution inconnue" }
+    var displayFrameRate: String {
+        guard let frameRate else { return "FPS inconnus" }
+        return String(format: "%.3g FPS", frameRate)
+    }
+}
+
+extension AudioTrack {
+    var displayLanguage: String { language ?? "Langue inconnue" }
+    var displayTitle: String { title?.isEmpty == false ? title! : "Sans titre" }
+    var displayChannels: String {
+        guard let channels else { return "Canaux inconnus" }
+        switch channels {
+        case 1: return "Mono"
+        case 2: return "Stéréo"
+        default: return "\(channels) canaux"
+        }
+    }
+}
+
+extension SubtitleTrack {
+    var displayLanguage: String { language ?? "Langue inconnue" }
+    var displayTitle: String { title?.isEmpty == false ? title! : "Sans titre" }
+    var displayFormat: String { format.uppercased() }
+}
