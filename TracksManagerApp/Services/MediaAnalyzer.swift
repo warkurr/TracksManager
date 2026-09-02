@@ -4,7 +4,7 @@ protocol MediaAnalyzer: Sendable {
     func analyze(fileURL: URL) async throws -> MediaAnalysis
 }
 
-struct MediaAnalysis: Sendable, Hashable {
+struct MediaAnalysis: Codable, Sendable, Hashable {
     let fileURL: URL
     let duration: TimeInterval?
     let format: String?
